@@ -1,7 +1,7 @@
 import argparse, json
 from pathlib import Path
 try:
-    import yaml  # installed via requirements.txt
+    import yaml
 except ImportError:
     yaml = None
 
