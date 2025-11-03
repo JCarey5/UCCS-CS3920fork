@@ -1,9 +1,18 @@
 import argparse, json
 from pathlib import Path
+import sys
+
+src_dir = Path(__file__).resolve().parent
+if str(src_dir) not in sys.path:
+    sys.path.insert(0, str(src_dir))
+
 try:
     import yaml
 except ImportError:
     yaml = None
+
+import graph_viz
+VISUALIZE_AVAILABLE = True
 
 from graph import AttackGraph
 from planner import rank_paths
@@ -13,7 +22,6 @@ def load_env(path: str):
     if p.suffix.lower() in (".yaml", ".yml") and yaml:
         return yaml.safe_load(p.read_text())
     return json.loads(p.read_text())
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--env", default="data/env.yaml")
@@ -23,8 +31,20 @@ def main():
     ap.add_argument("--wD", type=float, default=0.5)
     ap.add_argument("--wT", type=float, default=0.1)
     ap.add_argument("--wP", type=float, default=1.0)
+    ap.add_argument("--visualize", action="store_true", help="Launch attack graph visualization in browser")
     a = ap.parse_args()
 
+    # --- Visualization branch ---
+    if a.visualize:
+        if VISUALIZE_AVAILABLE:
+            print("Launching Attack Graph Flask Visualization at http://localhost:5000")
+            # Run Flask app imported from graph_viz.py
+            graph_viz.app.run(host="0.0.0.0", port=5000, debug=True)
+        else:
+            print("Visualization not available. Make sure graph_viz.py is in your repo and dependencies are installed.")
+        return
+
+    # --- Normal CLI path ---
     cfg = load_env(a.env)
     g = AttackGraph(cfg["assets"], cfg["start_nodes"], cfg["goal_nodes"], cfg["edges"])
     paths = g.enumerate_paths(max_depth=a.max_depth)
