@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-attack_graph_viz.py — Enhanced visual version
+attack_graph_viz.py
+Integrated version:
 - Loads env.yaml
-- Hierarchical PyVis layout (LR)
+- Keeps clean hierarchical PyVis layout
 - Highlights #1 ranked attack path
-- Displays styled ranked paths table
+- Displays ranked paths table
 Run: python attack_graph_viz.py
 Open: http://localhost:5000
 """
@@ -15,14 +16,14 @@ from flask import Flask, Response
 import yaml
 from pyvis.network import Network
 
-# --- Ensure repo root ---
+# --- Ensure repo root (where graph.py lives) is on sys.path ---
 repo_dir = Path(__file__).resolve().parent
 if str(repo_dir) not in sys.path:
     sys.path.insert(0, str(repo_dir))
 
+# --- Imports ---
 from graph import AttackGraph
 from planner import rank_paths
-
 
 # --- Load env.yaml ---
 def load_env_yaml(path="data/env.yaml"):
@@ -31,8 +32,7 @@ def load_env_yaml(path="data/env.yaml"):
         raise FileNotFoundError(f"{path} not found. Make sure data/env.yaml exists relative to repo root.")
     return yaml.safe_load(p.read_text())
 
-
-# --- Convert adjacency to edge list ---
+# --- Convert AttackGraph adjacency to edge list ---
 def edges_from_attackgraph(g: AttackGraph):
     edges = []
     for src, elist in g.adj.items():
@@ -48,16 +48,17 @@ def edges_from_attackgraph(g: AttackGraph):
             })
     return edges
 
-
-# --- Build styled HTML ---
+# --- Build PyVis HTML ---
 def build_pyvis_html(g: AttackGraph, ranked_paths):
     edges = edges_from_attackgraph(g)
     top_path = ranked_paths[0]["path"] if ranked_paths else []
+
+    # Set of (src, dst) tuples for the top-ranked path
     top_edges = {(e["src"], e["dst"]) for e in top_path}
 
-    net = Network(height='800px', width='100%', directed=True, bgcolor="#1a1a1a", font_color="white")
+    net = Network(height='800px', width='100%', directed=True)
 
-    # --- Layout options ---
+    # --- Layout options (clean horizontal flow) ---
     net.set_options("""
     var options = {
       "layout": {
@@ -81,19 +82,20 @@ def build_pyvis_html(g: AttackGraph, ranked_paths):
     """)
 
     # --- Add nodes ---
-    for n in g.assets:
+    all_nodes = set(g.assets)
+    for n in all_nodes:
         if n in g.start_nodes:
-            color = "#7DCEA0"  # green
+            color = "lightgreen"
             size = 30
         elif n in g.goal_nodes:
-            color = "#F5B041"  # amber
+            color = "orange"
             size = 40
         else:
-            color = "#5DADE2"  # blue
+            color = "lightblue"
             size = 20
         net.add_node(n, label=n, color=color, size=size)
 
-    # --- Add edges ---
+    # --- Add edges, highlighting top path ---
     for e in edges:
         src, dst = e["src"], e["dst"]
         label = e.get("technique", "?")
@@ -103,89 +105,18 @@ def build_pyvis_html(g: AttackGraph, ranked_paths):
         )
 
         if (src, dst) in top_edges:
-            color = "#E74C3C"  # red
+            color = "red"
             width = 4
         else:
             color = "gray"
             width = 1
 
-        net.add_edge(src, dst, label=label, title=title_text,
-                     color=color, width=width, font={"align": "top", "size": 10})
+        net.add_edge(src, dst, label=label, title=title_text, color=color, width=width, font={"align": "top", "size": 10})
 
+    # --- Generate HTML and append ranked paths table ---
     html = net.generate_html()
-
-    # --- Custom CSS (dark modern style) ---
-    custom_css = """
-    <style>
-      body {
-        font-family: 'Segoe UI', Roboto, sans-serif;
-        background-color: #121212;
-        color: #f0f0f0;
-        margin: 0;
-        padding: 0;
-      }
-      h2 {
-        text-align: center;
-        margin-top: 20px;
-        color: #f1c40f;
-        font-weight: 600;
-      }
-      .container {
-        max-width: 1100px;
-        margin: 0 auto;
-        padding: 20px;
-      }
-      .graph-box {
-        background: #1e1e1e;
-        border-radius: 12px;
-        box-shadow: 0 0 20px rgba(0,0,0,0.5);
-        padding: 10px;
-      }
-      table {
-        border-collapse: collapse;
-        width: 100%;
-        margin-top: 40px;
-        background: #1f1f1f;
-        border-radius: 10px;
-        overflow: hidden;
-        box-shadow: 0 0 10px rgba(0,0,0,0.3);
-      }
-      th, td {
-        padding: 10px 12px;
-        text-align: center;
-      }
-      th {
-        background-color: #333;
-        color: #f1c40f;
-        text-transform: uppercase;
-        font-size: 0.9em;
-      }
-      tr:nth-child(even) {
-        background-color: #2a2a2a;
-      }
-      tr:hover {
-        background-color: #383838;
-      }
-      .footer {
-        text-align: center;
-        color: #999;
-        margin-top: 40px;
-        font-size: 0.85em;
-      }
-    </style>
-    """
-
-    # --- Ranked paths table ---
-    path_list_html = """
-    <div class="container">
-      <h3 style='text-align:center;margin-top:30px;color:#f1c40f;'>Ranked Attack Paths</h3>
-      <div style='overflow-x:auto;'>
-        <table>
-          <tr>
-            <th>Rank</th><th>Utility</th><th>Probability</th><th>Impact</th>
-            <th>Detect</th><th>Time</th><th>Techniques</th>
-          </tr>
-    """
+    path_list_html = "<h3>Ranked Attack Paths</h3><table border='1' cellpadding='4' cellspacing='0' style='border-collapse: collapse;'>"
+    path_list_html += "<tr><th>Rank</th><th>Utility</th><th>Probability</th><th>Impact</th><th>Detect</th><th>Time</th><th>Techniques</th></tr>"
 
     for i, r in enumerate(ranked_paths, 1):
         steps = " → ".join(e.get("technique", "?") for e in r["path"])
@@ -200,17 +131,10 @@ def build_pyvis_html(g: AttackGraph, ranked_paths):
             f"<td>{steps}</td>"
             f"</tr>"
         )
-    path_list_html += "</table></div></div>"
+    path_list_html += "</table>"
 
-    footer_html = "<div class='footer'>Attack Graph Visualizer © 2025</div>"
-
-    # --- Inject custom CSS and layout ---
-    html = html.replace("</head>", custom_css + "\n</head>")
-    html = html.replace("<body>", "<body><div class='container'><h2>Attack Graph Visualization</h2><div class='graph-box'>")
-    html = html.replace("</body>", "</div>" + path_list_html + footer_html + "</body>")
-
-    return html
-
+    header_html = f"<h2 style='text-align:center;margin:8px 0'>Attack Graph Visualization</h2>\n"
+    return header_html + html + "<br><br>" + path_list_html
 
 # --- Flask app ---
 app = Flask(__name__)
@@ -224,8 +148,7 @@ def index():
     html = build_pyvis_html(g, ranked)
     return Response(html, mimetype='text/html')
 
-
-# --- Optional standalone mode ---
+# --- Optional standalone visualization (no server) ---
 def visualize_attack_graph(env_file="data/env.yaml"):
     cfg = load_env_yaml(env_file)
     g = AttackGraph(cfg["assets"], cfg["start_nodes"], cfg["goal_nodes"], cfg["edges"])
@@ -235,7 +158,6 @@ def visualize_attack_graph(env_file="data/env.yaml"):
     with html_file.open("w") as f:
         f.write(build_pyvis_html(g, ranked))
     print(f"Attack graph saved to {html_file.resolve()} (open in a browser)")
-
 
 # --- Main entry ---
 if __name__ == "__main__":
