@@ -32,6 +32,10 @@ def main():
     ap.add_argument("--wT", type=float, default=0.1)
     ap.add_argument("--wP", type=float, default=1.0)
     ap.add_argument("--visualize", action="store_true", help="Launch attack graph visualization in browser")
+    ap.add_argument("--scan-mode", action="store_true", help="Scan network via Caldera and build attack graph")
+    ap.add_argument("--system-config",help="JSON/YAML file describing target system topology")
+    ap.add_argument("--caldera-url", default="http://localhost:8888")
+    ap.add_argument("--caldera-key")
     a = ap.parse_args()
 
     # --- Visualization branch ---
