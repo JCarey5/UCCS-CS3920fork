@@ -18,8 +18,9 @@ class CalderaClient:
     """
     
     def __init__(self, base_url: str = "http://localhost:8888", 
-                 api_key: Optional[str] = "admin",
-                 mock_mode: bool = False):
+                 api_key: Optional[str] = "ADMIN123",
+                 mock_mode: bool = False,
+                 simulation_mode: bool = False):
         """
         Initialize Caldera client
         

@@ -32,11 +32,26 @@ execution_state = {
     "graph_updates": []
 }
 
-# --- Load env.yaml ---
-def load_env_yaml(path="data/env.yaml"):
+# --- Load graph from configurable path ---
+def load_env_yaml(path=None):
+    """Load graph YAML from configured path or default"""
+    # Check if Flask app has configured a path
+    if path is None and hasattr(app, 'config') and 'GRAPH_FILE' in app.config:
+        path = app.config['GRAPH_FILE']
+    
+    # Default to env.yaml
+    if path is None:
+        path = "data/env.yaml"
+    
     p = Path(path)
     if not p.exists():
-        raise FileNotFoundError(f"{path} not found. Make sure data/env.yaml exists relative to repo root.")
+        # Try relative to script location
+        p = Path(__file__).parent.parent / path
+    
+    if not p.exists():
+        raise FileNotFoundError(f"{path} not found. Make sure the graph file exists.")
+    
+    print(f"Loading graph from: {p}")
     return yaml.safe_load(p.read_text())
 
 
@@ -53,16 +68,14 @@ def edges_from_attackgraph(g: AttackGraph):
                 "impact": float(e.get("impact", 1.0)),
                 "detect": float(e.get("detect", 0.3)),
                 "time": float(e.get("time", 1.0)),
-                "status": e.get("status", "not_executed")  # Track execution status
+                "status": e.get("status", "not_executed")
             })
     return edges
 
 
 # --- Phase 6: Update graph from execution results ---
 def update_graph_from_execution(g: AttackGraph, execution_results: Dict) -> AttackGraph:
-    """
-    Update edge probabilities and detection rates based on actual execution
-    """
+    """Update edge probabilities and detection rates based on actual execution"""
     updates = []
     
     for result in execution_results.get("results", []):
@@ -120,7 +133,6 @@ def build_pyvis_html(g: AttackGraph, ranked_paths, execution_history=None):
         for exec_record in execution_history:
             for result in exec_record.get("results", []):
                 if result.get("status") == "success":
-                    # Find matching edge
                     for e in exec_record.get("path", []):
                         executed_edges.add((e["src"], e["dst"]))
 
@@ -214,6 +226,17 @@ def build_pyvis_html(g: AttackGraph, ranked_paths, execution_history=None):
         max-width: 1400px;
         margin: 0 auto;
         padding: 20px;
+      }
+      .graph-info {
+        background: #1f1f1f;
+        border-radius: 10px;
+        padding: 15px;
+        margin-bottom: 20px;
+        text-align: center;
+      }
+      .graph-info p {
+        margin: 5px 0;
+        color: #aaa;
       }
       .graph-box {
         background: #1e1e1e;
@@ -432,6 +455,17 @@ def build_pyvis_html(g: AttackGraph, ranked_paths, execution_history=None):
     </script>
     """
 
+    # Get graph file info
+    graph_file = app.config.get('GRAPH_FILE', 'data/env.yaml')
+    
+    # --- Graph Info Banner ---
+    graph_info = f"""
+    <div class="graph-info">
+      <p><strong>Graph Source:</strong> {graph_file}</p>
+      <p><strong>Assets:</strong> {len(g.assets)} | <strong>Start Nodes:</strong> {len(g.start_nodes)} | <strong>Goal Nodes:</strong> {len(g.goal_nodes)} | <strong>Edges:</strong> {len(edges)}</p>
+    </div>
+    """
+
     # --- Control Panel ---
     caldera_status = "connected" if CALDERA_AVAILABLE else "disconnected"
     caldera_class = "caldera-connected" if CALDERA_AVAILABLE else "caldera-disconnected"
@@ -479,7 +513,7 @@ def build_pyvis_html(g: AttackGraph, ranked_paths, execution_history=None):
     """
     
     if execution_history:
-        for exec_record in reversed(execution_history[-10:]):  # Last 10
+        for exec_record in reversed(execution_history[-10:]):
             timestamp = exec_record.get("timestamp", "Unknown")
             op_id = exec_record.get("operation_id", "Unknown")
             execution_log_html += f'<div class="log-entry"><span class="log-timestamp">[{timestamp}]</span><span class="log-info">Operation: {op_id}</span></div>'
@@ -533,7 +567,7 @@ def build_pyvis_html(g: AttackGraph, ranked_paths, execution_history=None):
             f"<td>{r['impact']:.2f}</td>"
             f"<td>{r['detect']:.2f}</td>"
             f"<td>{r['time']:.2f}</td>"
-            f"<td>{steps}</td>"
+            f"<td style='text-align:left;'>{steps}</td>"
             f"<td>{execute_btn}{status_badge}</td>"
             f"</tr>"
         )
@@ -574,7 +608,7 @@ def build_pyvis_html(g: AttackGraph, ranked_paths, execution_history=None):
     # --- Inject everything into HTML ---
     html = html.replace("</head>", custom_css + custom_js + "\n</head>")
     html = html.replace("<body>", 
-        f"<body><div class='container'><h2>Attack Graph Visualization</h2>{control_panel}{legend_html}<div class='graph-box'>")
+        f"<body><div class='container'><h2>Attack Graph Visualization</h2>{graph_info}{control_panel}{legend_html}<div class='graph-box'>")
     html = html.replace("</body>", 
         f"</div>{execution_log_html}{path_list_html}{graph_updates_html}{footer_html}</body>")
 
@@ -586,7 +620,8 @@ app = Flask(__name__)
 
 @app.route('/')
 def index():
-    cfg = load_env_yaml("data/env.yaml")
+    # Load graph from configured path
+    cfg = load_env_yaml()
     g = AttackGraph(cfg["assets"], cfg["start_nodes"], cfg["goal_nodes"], cfg["edges"])
     paths = g.enumerate_paths(max_depth=5)
     ranked = rank_paths(paths, top_k=5)
@@ -600,7 +635,7 @@ def execute_path(path_index):
     if not CALDERA_AVAILABLE:
         return jsonify({"error": "Caldera integration not available"}), 503
     
-    cfg = load_env_yaml("data/env.yaml")
+    cfg = load_env_yaml()
     g = AttackGraph(cfg["assets"], cfg["start_nodes"], cfg["goal_nodes"], cfg["edges"])
     paths = g.enumerate_paths(max_depth=5)
     ranked = rank_paths(paths, top_k=5)
@@ -612,7 +647,8 @@ def execute_path(path_index):
         # Initialize Caldera client
         caldera = CalderaClient(
             base_url=app.config.get("CALDERA_URL", "http://localhost:8888"),
-            api_key=app.config.get("CALDERA_KEY")
+            api_key=app.config.get("CALDERA_KEY", "ADMIN123"),
+            simulation_mode=True
         )
         
         # Get available agents
@@ -642,9 +678,10 @@ def execute_path(path_index):
         # Phase 6: Update graph based on execution results
         updated_graph = update_graph_from_execution(g, result)
         
-        # Save updated graph back to env.yaml
+        # Save updated graph back to file
+        graph_file = app.config.get('GRAPH_FILE', 'data/env.yaml')
         cfg["edges"] = updated_graph.edges
-        with open("data/env.yaml", "w") as f:
+        with open(graph_file, "w") as f:
             yaml.dump(cfg, f)
         
         return jsonify(result)
@@ -662,7 +699,7 @@ def stop_operation(operation_id):
     try:
         caldera = CalderaClient(
             base_url=app.config.get("CALDERA_URL", "http://localhost:8888"),
-            api_key=app.config.get("CALDERA_KEY")
+            api_key=app.config.get("CALDERA_KEY", "ADMIN123")
         )
         
         caldera.stop_operation(operation_id)
@@ -683,7 +720,8 @@ def status():
         "caldera_available": CALDERA_AVAILABLE,
         "active_operations": len(execution_state["active_operations"]),
         "total_executions": len(execution_state["execution_history"]),
-        "graph_updates": len(execution_state["graph_updates"])
+        "graph_updates": len(execution_state["graph_updates"]),
+        "graph_file": app.config.get('GRAPH_FILE', 'data/env.yaml')
     })
 
 
@@ -693,32 +731,25 @@ def history():
     return jsonify(execution_state["execution_history"])
 
 
-# --- Optional standalone mode ---
-def visualize_attack_graph(env_file="data/env.yaml"):
-    cfg = load_env_yaml(env_file)
-    g = AttackGraph(cfg["assets"], cfg["start_nodes"], cfg["goal_nodes"], cfg["edges"])
-    paths = g.enumerate_paths(max_depth=5)
-    ranked = rank_paths(paths, top_k=5)
-    html_file = Path("attack_graph.html")
-    with html_file.open("w") as f:
-        f.write(build_pyvis_html(g, ranked, execution_state.get("execution_history")))
-    print(f"Attack graph saved to {html_file.resolve()} (open in a browser)")
-
-
 # --- Main entry ---
 if __name__ == "__main__":
+    import argparse
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--graph", default="data/env.yaml", help="Graph YAML file to visualize")
+    parser.add_argument("--port", type=int, default=5000, help="Port to run on")
+    
+    args = parser.parse_args()
+    
     print("=" * 60)
     print("Attack Graph Visualization with Caldera Integration")
     print("=" * 60)
+    print(f"Graph file: {args.graph}")
     print(f"Caldera Integration: {'✓ Available' if CALDERA_AVAILABLE else '✗ Not Available'}")
-    print("Starting server at http://localhost:5000")
+    print(f"Starting server at http://localhost:{args.port}")
     print("=" * 60)
     
-    # Load config if available
-    config_file = Path("config.yaml")
-    if config_file.exists():
-        with open(config_file) as f:
-            config = yaml.safe_load(f)
-            app.config.update(config)
+    # Set graph file
+    app.config['GRAPH_FILE'] = args.graph
     
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=args.port, debug=True)
