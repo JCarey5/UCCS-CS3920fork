@@ -70,22 +70,28 @@ python3 server.py --insecure
 ```
 python mock_workflow.py --system-config data/system_template.yaml
 ```
-After running this command a mock_agents.yml and mock_responses.yml are generated which must be placed in these locations on the caldera side
+After running this command an agents.yml and scenario file are generated which must be placed in these locations on the caldera side
 ```
-Agents: <caldera>/conf/agents.yml
-Mock responses: <caldera>/plugins/mock/data/mock_responses.yml
+python convert_to_mock_plugin.py \
+  --agents-input mock_agents.yml \
+  --responses-input mock_responses.yml \
+  --caldera-path /path/to/caldera
+```
+```
+Agents: <caldera>/plugins/mock/conf/agents.yml
+Mock responses: <caldera>/plugins/mock/conf/scenarios/scenario_corporate_network.yml
+```
+You can open and use the localhost visualization and caldera mock agent tester by running these commands
 ```
 python mock_workflow.py \
   --system-config data/system_template.yaml \
   --export
- python src/cli.py --env results/updated_graph.yaml --visualize
+
+ python src/graph_viz.py --graph results/updated_graph.yaml --port 5000
+```
 
 
-
- python convert_to_mock_plugin.py \
-  --agents-input mock_agents.yml \
-  --responses-input mock_responses.yml \
-  --caldera-path /path/to/caldera
+ 
 
 
   cp agents.yml /path/to/caldera/plugins/mock/conf/agents.yml
